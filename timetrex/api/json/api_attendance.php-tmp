@@ -1,0 +1,186 @@
+<?php
+/*
+Global variables
+ */
+$TIMETREX_URL       = 'http://localhost:8085/api/json/api.php';
+$TIMETREX_USERNAME  = $_GET['username'];
+$TIMETREX_PASSWORD  = $_GET['password'];
+$TIMETREX_EMP_ID    = (int) $_GET['employee_id'];
+$TIMETREX_STATUS_ID = $_GET['status_id'];
+$TIMETREX_TYPE_ID   = 10;
+$TIMETREX_TRANSFER  = true;
+$TIMETREX_USERJSON  = '{"71192": {"username":"yawarkhan","password":"71192123"},"80291": {"username":"bilalraza","password":"80291123"},"90993": {"username":"adilanis","password":"909931234"},"180993": {"username":"harismumtaz","password":"180993123"},"211091": {"username":"tanveerrafiquee","password":"211091123"},"260888": {"username":"maazibrahim","password":"2608881234"},"13": {"username":"hammadmassod","password":"arsalan123"},"5": {"username":"asjadamin","password":"2608891234"},"3": {"username":"admin","password":"arsalan123"},"2":{"username":"tahirakhtar","password":"260890!@#"}}';
+$TIMETREX_USER      = json_decode($TIMETREX_USERJSON, TRUE);
+//    $arguments = array();
+
+if (is_null($_GET['employee_id']) || empty($_GET['employee_id'])) {
+	echo json_encode(array("status" => 200, "msg" => "Employee id is empty"));
+	exit;
+}
+
+if (is_null($_GET['status_id'])/*||empty($_GET['status_id'])*/) {
+	echo json_encode(array("status" => 200, "msg" => "Status id is empty"));
+	exit;
+} else {
+	if ($TIMETREX_STATUS_ID == 0) {
+		//STATUS TIME IN
+		$TIMETREX_TYPE_ID   = 10;
+		$TIMETREX_STATUS_ID = 10;
+	} else if ($TIMETREX_STATUS_ID == 1) {
+		//STATUS TIME OUT
+		$TIMETREX_TYPE_ID   = 10;
+		$TIMETREX_STATUS_ID = 20;
+	} else if ($TIMETREX_STATUS_ID == 2) {
+		//STATUS BREAK IN
+		$TIMETREX_TYPE_ID   = 20;
+		$TIMETREX_STATUS_ID = 10;
+	} else {
+		//STATUS  OUT
+		$TIMETREX_TYPE_ID   = 20;
+		$TIMETREX_STATUS_ID = 20;
+	}
+}
+
+//echo "username ".$TIMETREX_USERNAME." password ". $TIMETREX_PASSWORD;
+/*$TIMETREX_URL = 'https://demo.timetrex.com/api/json/api.php';
+$TIMETREX_USERNAME = 'demoadmin';
+$TIMETREX_PASSWORD = 'demo283920';*/
+
+//Build URL given a Class and Method to call.
+//Format is: http://demo.timetrex.com/api/json/api.php?Class=<CLASS>&Method=<METHOD>&SessionID=<SessionID>
+function buildURL($class, $method, $session_id = FALSE) {
+	global $TIMETREX_URL, $TIMETREX_SESSION_ID;
+	$url = $TIMETREX_URL.'?Class='.$class.'&Method='.$method;
+	if ($session_id != '' OR $TIMETREX_SESSION_ID != '') {
+		if ($session_id == '') {
+			$session_id = $TIMETREX_SESSION_ID;
+		}
+		$url .= '&SessionID='.$session_id;
+	}
+
+	return $url;
+}
+
+//Handle complex result.
+function handleResult($result, $raw = FALSE) {
+	if (is_array($result) AND isset($result['api_retval'])) {
+		if ($raw === TRUE) {
+			return $result;
+		} else {
+			if ($result['api_retval'] === FALSE) {
+				//Display any error messages that might be returned.
+				$output[] = '  Returned:';
+				$output[] = ($result['api_retval'] === TRUE)?'    IsValid: YES':'    IsValid: NO';
+				if ($result['api_retval'] === TRUE) {
+					$output[] = '    Return Value: '.$result['api_retval'];
+				} else {
+					$output[] = '    Code: '.$result['api_details']['code'];
+					$output[] = '    Description: '.$result['api_details']['description'];
+					$output[] = '    Details: ';
+
+					$details = $result['api_details']['details'];
+					if (is_array($details)) {
+						foreach ($details as $row => $detail) {
+							$output[] = '      Row: '.$row;
+							foreach ($detail as $field => $msgs) {
+								$output[] = '      --Field: '.$field;
+								foreach ($msgs as $key => $msg) {
+									$output[] = '      ----Message: '.$msg;
+								}
+							}
+						}
+					}
+				}
+				$output[] = '==============================================================';
+				$output[] = '';
+
+				//echo implode( "\n", $output );
+			}
+
+			return $result['api_retval'];
+		}
+	}
+
+	return $result;
+}
+
+//Post data (array of arguments) to URL
+function postToURL($url, $data, $raw_result = FALSE) {
+	$curl_connection = curl_init($url);
+	curl_setopt($curl_connection, CURLOPT_CONNECTTIMEOUT, 600);
+	curl_setopt($curl_connection, CURLOPT_RETURNTRANSFER, TRUE);
+	curl_setopt($curl_connection, CURLOPT_SSL_VERIFYPEER, FALSE);
+	curl_setopt($curl_connection, CURLOPT_FOLLOWLOCATION, 1);
+	curl_setopt($curl_connection, CURLOPT_REFERER, $url);//Referred is required is CSRF checks are enabled on the server.
+	//When sending JSON data to POST, it must be sent as JSON=<JSON DATA>
+	//<JSON DATA> should be an associative array with the first level being the number of arguments, where each argument can be of mixed type. ie:
+	// array(
+	//       0 => <ARG1>,
+	//		 1 => <ARG2>,
+	//		 2 => <ARG3>,
+	//       ...
+	//      )
+	$post_data = 'json='.urlencode(json_encode($data));
+	curl_setopt($curl_connection, CURLOPT_POSTFIELDS, $post_data);
+
+	/*echo "==============================================================\n";
+	echo "Posting data to URL: ". $url ."\n";
+	echo "  POST Data: ". $post_data ."\n";
+	echo "--------------------------------------------------------------\n";*/
+	$result = curl_exec($curl_connection);
+	curl_close($curl_connection);
+
+	return handleResult(json_decode($result, TRUE), $raw_result);
+}
+
+$TIMETREX_USERNAME = $TIMETREX_USER[$TIMETREX_EMP_ID]['username'];
+$TIMETREX_PASSWORD = $TIMETREX_USER[$TIMETREX_EMP_ID]['password'];
+/*$TIMETREX_USERNAME = 'admin';
+$TIMETREX_PASSWORD = 'arsalan123';*/
+
+$arguments           = array('user_name' => $TIMETREX_USERNAME, 'password' => $TIMETREX_PASSWORD);
+$TIMETREX_SESSION_ID = postToURL(buildURL('APIAuthentication', 'Login'), $arguments);
+if ($TIMETREX_SESSION_ID == FALSE) {
+	echo "Login Failed!<br>\n";
+	exit;
+}
+//echo "Session ID: $TIMETREX_SESSION_ID<br>\n";
+
+$arguments = array('filter_data' => array('employee_number' => $TIMETREX_EMP_ID));
+$user_data = postToURL(buildURL('APIUser', 'getUser'), array($arguments));
+
+$punch_data = array(
+	'user_id'             => $user_data[0]['id'],
+	'transfer'            => $TIMETREX_TRANSFER,
+	'type_id'             => $TIMETREX_TYPE_ID,
+	'status_id'           => $TIMETREX_STATUS_ID,
+	'punch_control_id'    => $TIMETREX_SESSION_ID,
+	'date_stamp'          => Date('d-M-y'),
+	'time_stamp'          => Date('d-M-y+h:m+A'),
+	'punch_date'          => Date('d-M-y'),
+	'punch_time'          => Date('h:m+A'),
+	'original_time_stamp' => Date('d-M-y+h:m+A'),
+	'actual_time_stamp'   => Date('d-M-y+h:m+A'),
+	'epoch'               => strtotime("now"),
+	'station_id'          => $TIMETREX_SESSION_ID,
+);
+
+if (isset($user_data)) {
+	$result = postToURL(buildURL('APIPunch', 'setUserPunch'), array($punch_data));
+}
+if ($result !== FALSE) {
+	echo json_encode(array("status" => 200, "msg" => "Punch added successfully."));
+	$insert_id = $result;//Get employees new ID on success.
+} else {
+	echo "Punch save failed.<br>\n";
+	print_r($punch_data);//Show error messages
+}
+
+//
+//Get TimeSheet Summary report data in raw PHP native array format. 'csv' and 'pdf' are also valid formats.
+//
+/*$config = postToURL( buildURL( 'APITimesheetSummaryReport', 'getTemplate' ), array( 'by_employee+regular+overtime+premium+absence' ) );
+$result = postToURL( buildURL( 'APITimesheetSummaryReport', 'getTimesheetSummaryReport' ), array( $config, 'raw' ) );
+ *//*echo "Report Data: <br>\n";
+var_dump($result);*/
+?>
